@@ -56,6 +56,8 @@ export async function POST(request: Request) {
       );
     }
 
+    console.log("[SIGNUP] Step 1: checking existing user");
+
     const existingUser = await prisma.user.findUnique({
       where: {
         email,
@@ -75,28 +77,40 @@ export async function POST(request: Request) {
       );
     }
 
+    console.log("[SIGNUP] Step 2: hashing password");
+
     const passwordHash = await hashPassword(password);
 
-    const user = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          firstName,
-          lastName,
-          email,
-          passwordHash,
-          role: "USER",
-          status: "PENDING",
-          emailVerified: false,
-        },
-      });
+    console.log("[SIGNUP] Step 3: creating user");
 
-      await tx.userProfile.create({
+    const newUser = await prisma.user.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        passwordHash,
+        role: "USER",
+        status: "PENDING",
+        emailVerified: false,
+      },
+    });
+
+    console.log("[SIGNUP] User created:", newUser.id);
+
+    try {
+      console.log("[SIGNUP] Step 4: creating user profile");
+
+      await prisma.userProfile.create({
         data: {
           userId: newUser.id,
         },
       });
 
-      await tx.balance.create({
+      console.log("[SIGNUP] User profile created");
+
+      console.log("[SIGNUP] Step 5: creating balance");
+
+      await prisma.balance.create({
         data: {
           userId: newUser.id,
           available: 0,
@@ -104,26 +118,54 @@ export async function POST(request: Request) {
         },
       });
 
-      await tx.kycVerification.create({
+      console.log("[SIGNUP] Balance created");
+
+      console.log("[SIGNUP] Step 6: creating KYC record");
+
+      await prisma.kycVerification.create({
         data: {
           userId: newUser.id,
           status: "NOT_STARTED",
         },
       });
 
-      return newUser;
-    });
+      console.log("[SIGNUP] KYC record created");
+    } catch (setupError) {
+      console.error(
+        "[SIGNUP] Account setup failed. Rolling back user:",
+        setupError
+      );
+
+      try {
+        await prisma.user.delete({
+          where: {
+            id: newUser.id,
+          },
+        });
+
+        console.log("[SIGNUP] User rollback successful");
+      } catch (rollbackError) {
+        console.error(
+          "[SIGNUP] User rollback failed:",
+          rollbackError
+        );
+      }
+
+      throw setupError;
+    }
+
+    console.log("[SIGNUP] SUCCESS");
 
     return NextResponse.json(
       {
         success: true,
         message: "Account created successfully.",
-        userId: user.id,
+        userId: newUser.id,
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Signup error:", error);
+    console.error("[SIGNUP] FINAL ERROR:", error);
 
     return NextResponse.json(
       {
