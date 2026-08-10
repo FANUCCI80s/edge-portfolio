@@ -20,11 +20,16 @@ export async function GET() {
   try {
     await prisma.$queryRaw`SELECT 1`;
 
+    const userCount = await prisma.user.count();
+
     return NextResponse.json({
       configured: Boolean(databaseUrl),
       host: parsedHost,
       database: parsedDatabase,
       connection: "success",
+      prisma: "success",
+      userTable: "success",
+      userCount,
     });
   } catch (error) {
     console.error("Database diagnostic error:", error);
