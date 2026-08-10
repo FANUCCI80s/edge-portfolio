@@ -1,0 +1,573 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String     @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String     @unique
+  passwordHash  String
+  phone         String?
+  role          UserRole   @default(USER)
+  status        UserStatus @default(PENDING)
+  emailVerified Boolean    @default(false)
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  accountActivities      AccountActivity[]
+  adminApprovalsMade     AdminApproval[]     @relation("AdminApprovalActor")
+  adminApprovalsFor      AdminApproval[]     @relation("AdminApprovalTarget")
+  balance                Balance?
+  balanceAdjustmentsMade BalanceAdjustment[] @relation("BalanceAdjustmentAdmin")
+  balanceAdjustmentsFor  BalanceAdjustment[] @relation("BalanceAdjustmentUser")
+  deposits               DepositRequest[]
+  receivedMessages       DirectMessage[]     @relation("DirectMessageRecipient")
+  sentMessages           DirectMessage[]     @relation("DirectMessageSender")
+  files                  FileAsset[]
+  kyc                    KycVerification?
+  notifications          Notification[]
+  otpCodes               OtpCode[]
+  sessions               Session[]
+  transactions           Transaction[]
+  profile                UserProfile?
+  withdrawals            WithdrawalRequest[]
+
+  @@index([status])
+  @@index([role])
+  @@index([createdAt])
+}
+
+model UserProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  avatarFileId String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  avatarFile FileAsset? @relation("UserAvatar", fields: [avatarFileId], references: [id])
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Balance {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  available Decimal  @default(0) @db.Decimal(20, 8)
+  locked    Decimal  @default(0) @db.Decimal(20, 8)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model KycVerification {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  status             KycStatus @default(NOT_STARTED)
+  dateOfBirth        DateTime?
+  nationality        String?
+  countryOfResidence String?
+  residentialAddress String?
+  city               String?
+  state              String?
+  postalCode         String?
+  governmentIdType   String?
+  governmentIdNumber String?
+  submittedAt        DateTime?
+  reviewedAt         DateTime?
+  declineReason      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  idBackFile  FileAsset? @relation("KycIdBack")
+  idFrontFile FileAsset? @relation("KycIdFront")
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([submittedAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model OtpCode {
+  id        String     @id @default(cuid())
+  userId    String
+  codeHash  String
+  purpose   OtpPurpose
+  status    OtpStatus  @default(PENDING)
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([purpose])
+  @@index([expiresAt])
+}
+
+model FileAsset {
+  id           String   @id @default(cuid())
+  userId       String
+  type         FileType
+  originalName String
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  kycFrontForId     String?          @unique
+  kycBackForId      String?          @unique
+  paymentInvoiceFor DepositRequest?  @relation("PaymentInvoice")
+  depositsProofFor  DepositRequest?  @relation("DepositProof")
+  kycBackFor        KycVerification? @relation("KycIdBack", fields: [kycBackForId], references: [id])
+  kycFrontFor       KycVerification? @relation("KycIdFront", fields: [kycFrontForId], references: [id])
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarFor         UserProfile?     @relation("UserAvatar")
+
+  @@index([userId])
+  @@index([type])
+}
+
+model BankDepositAccount {
+  id            String   @id @default(cuid())
+  accountName   String
+  bankName      String
+  accountNumber String
+  routingNumber String?
+  swiftBic      String?
+  bankAddress   String?
+  instructions  String?
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deposits DepositRequest[]
+
+  @@index([isEnabled])
+}
+
+model CardDepositConfig {
+  id           String   @id @default(cuid())
+  paymentLink  String
+  instructions String?
+  isEnabled    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CryptoDepositOption {
+  id            String   @id @default(cuid())
+  asset         String
+  symbol        String
+  network       String
+  walletAddress String
+  instructions  String?
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deposits DepositRequest[]
+
+  @@index([isEnabled])
+  @@index([symbol])
+  @@index([network])
+}
+
+model PaymentDepositConfig {
+  id                 String        @id @default(cuid())
+  method             DepositMethod @unique
+  paymentInformation String
+  instructions       String?
+  isEnabled          Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  deposits DepositRequest[]
+
+  @@index([isEnabled])
+}
+
+model WithdrawalMethodConfig {
+  id           String           @id @default(cuid())
+  method       WithdrawalMethod @unique
+  displayName  String
+  instructions String?
+  isEnabled    Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([isEnabled])
+}
+
+model DepositRequest {
+  id                    String        @id @default(cuid())
+  userId                String
+  method                DepositMethod
+  status                DepositStatus @default(PENDING)
+  amount                Decimal       @db.Decimal(20, 8)
+  reference             String?
+  notes                 String?
+  bankAccountId         String?
+  cryptoOptionId        String?
+  paymentConfigId       String?
+  proofFileId           String?       @unique
+  invoiceFileId         String?       @unique
+  selectedBankName      String?
+  selectedAccountName   String?
+  selectedAccountNumber String?
+  selectedRoutingNumber String?
+  selectedSwiftBic      String?
+  selectedBankAddress   String?
+  cryptoAsset           String?
+  cryptoSymbol          String?
+  cryptoNetwork         String?
+  cryptoWalletAddress   String?
+  paymentInformation    String?
+  reviewedAt            DateTime?
+  reviewedById          String?
+  reviewAction          ReviewAction?
+  declineReason         String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  adminApprovals AdminApproval[]
+  bankAccount    BankDepositAccount?   @relation(fields: [bankAccountId], references: [id])
+  cryptoOption   CryptoDepositOption?  @relation(fields: [cryptoOptionId], references: [id])
+  invoiceFile    FileAsset?            @relation("PaymentInvoice", fields: [invoiceFileId], references: [id])
+  paymentConfig  PaymentDepositConfig? @relation(fields: [paymentConfigId], references: [id])
+  proofFile      FileAsset?            @relation("DepositProof", fields: [proofFileId], references: [id])
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([method])
+  @@index([createdAt])
+  @@index([reviewedById])
+}
+
+model WithdrawalRequest {
+  id     String           @id @default(cuid())
+  userId String
+  method WithdrawalMethod
+  status WithdrawalStatus @default(PENDING)
+  amount Decimal          @db.Decimal(20, 8)
+
+  name  String?
+  email String?
+  phone String?
+  tag   String?
+
+  bankAccountName   String?
+  bankAccountNumber String?
+  routingNumber     String?
+  swiftBic          String?
+  bankName          String?
+  bankAddress       String?
+
+  reviewedAt    DateTime?
+  reviewedById  String?
+  reviewAction  ReviewAction?
+  declineReason String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  adminApprovals AdminApproval[]
+  transactions   Transaction[]
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([method])
+  @@index([createdAt])
+  @@index([reviewedById])
+}
+
+model Transaction {
+  id           String            @id @default(cuid())
+  userId       String
+  type         TransactionType
+  status       TransactionStatus @default(PENDING)
+  amount       Decimal           @db.Decimal(20, 8)
+  currency     String            @default("USD")
+  description  String?
+  depositId    String?
+  withdrawalId String?
+  reference    String?
+  completedAt  DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  deposit    DepositRequest?    @relation(fields: [depositId], references: [id])
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  withdrawal WithdrawalRequest? @relation(fields: [withdrawalId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@index([depositId])
+  @@index([withdrawalId])
+}
+
+model AdminApproval {
+  id           String       @id @default(cuid())
+  adminId      String
+  userId       String
+  depositId    String?
+  withdrawalId String?
+  action       ReviewAction
+  reason       String?
+  createdAt    DateTime     @default(now())
+
+  depositRequestId    String?
+  withdrawalRequestId String?
+
+  admin             User               @relation("AdminApprovalActor", fields: [adminId], references: [id])
+  depositRequest    DepositRequest?    @relation(fields: [depositRequestId], references: [id])
+  user              User               @relation("AdminApprovalTarget", fields: [userId], references: [id], onDelete: Cascade)
+  withdrawalRequest WithdrawalRequest? @relation(fields: [withdrawalRequestId], references: [id])
+
+  @@index([adminId])
+  @@index([userId])
+  @@index([depositId])
+  @@index([withdrawalId])
+  @@index([createdAt])
+}
+
+model BalanceAdjustment {
+  id        String                @id @default(cuid())
+  adminId   String
+  userId    String
+  type      BalanceAdjustmentType
+  amount    Decimal               @db.Decimal(20, 8)
+  currency  String                @default("USD")
+  reason    String
+  createdAt DateTime              @default(now())
+
+  admin User @relation("BalanceAdjustmentAdmin", fields: [adminId], references: [id])
+  user  User @relation("BalanceAdjustmentUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model DirectMessage {
+  id          String    @id @default(cuid())
+  senderId    String
+  recipientId String
+  subject     String?
+  message     String
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  recipient User @relation("DirectMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  sender    User @relation("DirectMessageSender", fields: [senderId], references: [id])
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model AccountActivity {
+  id          String       @id @default(cuid())
+  userId      String
+  type        ActivityType
+  description String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model PlatformSettings {
+  id             String   @id @default(cuid())
+  platformName   String   @default("Edge Portfolio")
+  logoUrl        String?
+  primaryColor   String   @default("#22c55e")
+  secondaryColor String   @default("#050806")
+  accentColor    String   @default("#16a34a")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+  SUSPENDED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+enum OtpPurpose {
+  LOGIN
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum OtpStatus {
+  PENDING
+  USED
+  EXPIRED
+}
+
+enum FileType {
+  AVATAR
+  GOVERNMENT_ID_FRONT
+  GOVERNMENT_ID_BACK
+  DEPOSIT_PROOF
+  PAYMENT_INVOICE
+  OTHER
+}
+
+enum DepositMethod {
+  BANK_TRANSFER
+  CARD
+  CRYPTOCURRENCY
+  CASH_APP
+  PAYPAL
+  ZELLE
+  VENMO
+}
+
+enum DepositStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+enum WithdrawalMethod {
+  BANK_TRANSFER
+  CASH_APP
+  PAYPAL
+  ZELLE
+  VENMO
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+}
+
+enum ReviewAction {
+  APPROVED
+  DECLINED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRADE
+  REFUND
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum BalanceAdjustmentType {
+  CREDIT
+  DEBIT
+}
+
+enum NotificationType {
+  SYSTEM
+  DEPOSIT
+  WITHDRAWAL
+  KYC
+  TRADE
+  SECURITY
+  MESSAGE
+  ACCOUNT
+}
+
+enum ActivityType {
+  LOGIN
+  LOGOUT
+  PASSWORD_CHANGED
+  EMAIL_CHANGED
+  PHONE_CHANGED
+  AVATAR_CHANGED
+  KYC_SUBMITTED
+  KYC_APPROVED
+  KYC_DECLINED
+  DEPOSIT_SUBMITTED
+  DEPOSIT_APPROVED
+  DEPOSIT_DECLINED
+  WITHDRAWAL_SUBMITTED
+  WITHDRAWAL_APPROVED
+  WITHDRAWAL_DECLINED
+  TRADE_OPENED
+  TRADE_CLOSED
+  ACCOUNT_UPDATED
+  ADMIN_BALANCE_ADJUSTED
+  ADMIN_MESSAGE_SENT
+}
