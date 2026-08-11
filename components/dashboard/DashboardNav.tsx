@@ -2,13 +2,50 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function DashboardNav() {
+  const router = useRouter();
+
   const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const closeMenu = () => {
     setOpen(false);
+  };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+
+    try {
+      setLoggingOut(true);
+      setOpen(false);
+
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to log out.");
+      }
+
+      // Replace the current dashboard history entry
+      // so the user is taken directly to login.
+      router.replace("/login");
+
+      // Refresh the router so protected pages immediately
+      // recognize that the session has been destroyed.
+      router.refresh();
+    } catch (error) {
+      console.error("Logout error:", error);
+
+      setLoggingOut(false);
+
+      alert("Unable to log out. Please try again.");
+    }
   };
 
   return (
@@ -114,10 +151,12 @@ export default function DashboardNav() {
 
           <button
             type="button"
-            className="mt-3 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-zinc-400 transition hover:bg-red-400/10 hover:text-red-400"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="mt-3 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-zinc-400 transition hover:bg-red-400/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span>↪</span>
-            Logout
+            {loggingOut ? "Logging out..." : "Logout"}
           </button>
         </div>
       </aside>
@@ -257,15 +296,16 @@ export default function DashboardNav() {
           </Link>
         </nav>
 
-        {/* Logout */}
+        {/* Mobile Logout */}
         <div className="border-t border-white/10 p-4">
           <button
             type="button"
-            onClick={closeMenu}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-zinc-400 transition hover:bg-red-400/10 hover:text-red-400"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-zinc-400 transition hover:bg-red-400/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span>↪</span>
-            Logout
+            {loggingOut ? "Logging out..." : "Logout"}
           </button>
         </div>
       </aside>

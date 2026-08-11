@@ -1,3 +1,4 @@
+import "server-only";
 import { cookies } from "next/headers";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
