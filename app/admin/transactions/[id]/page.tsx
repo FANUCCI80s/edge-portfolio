@@ -17,6 +17,12 @@ type TransactionStatus =
   | "FAILED"
   | "REVERSED";
 
+type RequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "DECLINED"
+  | "CANCELLED";
+
 type ReviewTransaction = {
   id: string;
   type: TransactionType;
@@ -39,12 +45,14 @@ type ReviewTransaction = {
   deposit: {
     id: string;
     method: string;
-    status: string;
+    status: RequestStatus;
     reference: string | null;
     amount: string | number;
     notes: string | null;
+
     proofFileId: string | null;
     invoiceFileId: string | null;
+
     declineReason: string | null;
     reviewedAt: string | null;
     createdAt: string;
@@ -67,8 +75,9 @@ type ReviewTransaction = {
   withdrawal: {
     id: string;
     method: string;
-    status: string;
+    status: RequestStatus;
     amount: string | number;
+
     name: string | null;
     email: string | null;
     phone: string | null;
@@ -117,7 +126,7 @@ function formatAmount(
   }
 }
 
-function formatDate(date: string | null): string {
+function formatDate(date: string | null | undefined): string {
   if (!date) {
     return "—";
   }
@@ -147,18 +156,25 @@ function getMethodLabel(
   switch (method) {
     case "BANK_TRANSFER":
       return "Bank Transfer";
+
     case "CARD":
-      return "Card";
+      return "Credit / Debit Card";
+
     case "CRYPTOCURRENCY":
       return "Cryptocurrency";
+
     case "CASH_APP":
       return "Cash App";
+
     case "PAYPAL":
       return "PayPal";
+
     case "ZELLE":
       return "Zelle";
+
     case "VENMO":
       return "Venmo";
+
     default:
       return method
         .toLowerCase()
@@ -171,18 +187,26 @@ function getMethodLabel(
   }
 }
 
-function getStatusClass(status: string): string {
+function getTransactionStatusClass(
+  status: string
+): string {
   switch (status) {
     case "PENDING":
       return "border-yellow-500/20 bg-yellow-500/10 text-yellow-400";
 
-    case "APPROVED":
     case "COMPLETED":
       return "border-green-500/20 bg-green-500/10 text-green-400";
 
-    case "DECLINED":
     case "FAILED":
+    case "DECLINED":
       return "border-red-500/20 bg-red-500/10 text-red-400";
+
+    case "APPROVED":
+      return "border-green-500/20 bg-green-500/10 text-green-400";
+
+    case "CANCELLED":
+    case "REVERSED":
+      return "border-gray-500/20 bg-gray-500/10 text-gray-400";
 
     default:
       return "border-white/10 bg-white/5 text-gray-300";
@@ -213,6 +237,52 @@ function DetailRow({
   );
 }
 
+function ReviewStatus({
+  status,
+}: {
+  status: string;
+}) {
+  return (
+    <span
+      className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getTransactionStatusClass(
+        status
+      )}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function SectionHeader({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-5">
+      {eyebrow && (
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-green-400">
+          {eyebrow}
+        </p>
+      )}
+
+      <h2 className="mt-1 text-lg font-semibold text-white">
+        {title}
+      </h2>
+
+      {description && (
+        <p className="mt-1 text-sm text-gray-500">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AdminTransactionReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -224,6 +294,7 @@ export default function AdminTransactionReviewPage() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
   const [error, setError] = useState("");
 
   const [declineReason, setDeclineReason] = useState("");
@@ -254,7 +325,11 @@ export default function AdminTransactionReviewPage() {
         );
       }
 
-      setTransaction(data.transaction || null);
+      if (!data.transaction) {
+        throw new Error("Transaction not found.");
+      }
+
+      setTransaction(data.transaction);
     } catch (err) {
       setError(
         err instanceof Error
@@ -282,7 +357,7 @@ export default function AdminTransactionReviewPage() {
       !declineReason.trim()
     ) {
       setError(
-        "Please provide a reason for declining this transaction."
+        "Please provide a reason for declining this request."
       );
       return;
     }
@@ -337,7 +412,7 @@ export default function AdminTransactionReviewPage() {
       <main className="min-h-screen bg-[#050806] text-white">
         <div className="mx-auto max-w-7xl px-6 py-10">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-10 text-center text-gray-400">
-            Loading transaction...
+            Loading transaction review...
           </div>
         </div>
       </main>
@@ -375,26 +450,34 @@ export default function AdminTransactionReviewPage() {
     );
   }
 
-  const isDeposit =
-    transaction.type === "DEPOSIT" &&
-    Boolean(transaction.deposit);
+  const deposit =
+    transaction.type === "DEPOSIT"
+      ? transaction.deposit
+      : null;
 
-  const isWithdrawal =
-    transaction.type === "WITHDRAWAL" &&
-    Boolean(transaction.withdrawal);
+  const withdrawal =
+    transaction.type === "WITHDRAWAL"
+      ? transaction.withdrawal
+      : null;
+
+  const isDeposit = Boolean(deposit);
+
+  const isWithdrawal = Boolean(withdrawal);
 
   const isPending =
     transaction.status === "PENDING" &&
-    ((isDeposit && transaction.deposit?.status === "PENDING") ||
-      (isWithdrawal &&
-        transaction.withdrawal?.status === "PENDING"));
+    ((deposit?.status === "PENDING") ||
+      (withdrawal?.status === "PENDING"));
 
-  const deposit = transaction.deposit;
-  const withdrawal = transaction.withdrawal;
+  const requestStatus =
+    deposit?.status ||
+    withdrawal?.status ||
+    transaction.status;
 
   return (
     <main className="min-h-screen bg-[#050806] text-white">
       <div className="mx-auto max-w-7xl px-6 py-10">
+        {/* HEADER */}
         <div className="mb-8">
           <Link
             href="/admin/transactions"
@@ -406,30 +489,45 @@ export default function AdminTransactionReviewPage() {
           <div className="mt-5 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
             <div>
               <p className="text-sm font-medium text-green-400">
-                Transaction Review
+                Admin Transaction Management
               </p>
 
               <h1 className="mt-2 text-3xl font-bold tracking-tight">
                 {isDeposit
-                  ? "Deposit Review"
+                  ? "Deposit Request Review"
                   : isWithdrawal
-                  ? "Withdrawal Review"
+                  ? "Withdrawal Request Review"
                   : "Transaction Details"}
               </h1>
 
-              <p className="mt-2 text-sm text-gray-400">
-                Review the transaction information before
-                taking administrative action.
+              <p className="mt-2 max-w-2xl text-sm text-gray-400">
+                {isDeposit
+                  ? "Review the user's deposit request, submitted payment information, proof files, and transaction details before approving or declining it."
+                  : isWithdrawal
+                  ? "Review the user's withdrawal request and payout information before approving or declining it."
+                  : "Review the transaction information and account activity."}
               </p>
             </div>
 
-            <span
-              className={`inline-flex w-fit rounded-full border px-4 py-2 text-sm font-semibold ${getStatusClass(
-                transaction.status
-              )}`}
-            >
-              {transaction.status}
-            </span>
+            <div className="flex items-center gap-3">
+              <span
+                className={`inline-flex rounded-full border px-4 py-2 text-sm font-semibold ${getTransactionStatusClass(
+                  transaction.status
+                )}`}
+              >
+                Transaction: {transaction.status}
+              </span>
+
+              {(deposit || withdrawal) && (
+                <span
+                  className={`inline-flex rounded-full border px-4 py-2 text-sm font-semibold ${getTransactionStatusClass(
+                    requestStatus
+                  )}`}
+                >
+                  Request: {requestStatus}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -439,20 +537,139 @@ export default function AdminTransactionReviewPage() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
           <div className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <div className="mb-5 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    Transaction Information
-                  </h2>
+            {/* ===================================================== */}
+            {/* REQUEST REVIEW BANNER */}
+            {/* ===================================================== */}
 
-                  <p className="mt-1 text-sm text-gray-500">
-                    Core transaction details.
-                  </p>
+            {isDeposit && deposit && (
+              <section className="rounded-2xl border border-green-500/20 bg-green-500/[0.04] p-6">
+                <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-green-400">
+                      Deposit Request
+                    </p>
+
+                    <h2 className="mt-2 text-xl font-bold text-white">
+                      Deposit Request Review
+                    </h2>
+
+                    <p className="mt-1 text-sm text-gray-400">
+                      Deposit request #{deposit.id}
+                    </p>
+                  </div>
+
+                  <ReviewStatus status={deposit.status} />
                 </div>
-              </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">
+                      Requested Amount
+                    </p>
+
+                    <p className="mt-2 text-xl font-bold text-white">
+                      {formatAmount(
+                        deposit.amount,
+                        transaction.currency
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">
+                      Method
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {getMethodLabel(deposit.method)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">
+                      Submitted
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {formatDate(deposit.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {isWithdrawal && withdrawal && (
+              <section className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.04] p-6">
+                <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">
+                      Withdrawal Request
+                    </p>
+
+                    <h2 className="mt-2 text-xl font-bold text-white">
+                      Withdrawal Request Review
+                    </h2>
+
+                    <p className="mt-1 text-sm text-gray-400">
+                      Withdrawal request #{withdrawal.id}
+                    </p>
+                  </div>
+
+                  <ReviewStatus status={withdrawal.status} />
+                </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">
+                      Requested Amount
+                    </p>
+
+                    <p className="mt-2 text-xl font-bold text-white">
+                      {formatAmount(
+                        withdrawal.amount,
+                        transaction.currency
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">
+                      Method
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {getMethodLabel(
+                        withdrawal.method
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">
+                      Submitted
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {formatDate(
+                        withdrawal.createdAt
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* ===================================================== */}
+            {/* TRANSACTION INFORMATION */}
+            {/* ===================================================== */}
+
+            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <SectionHeader
+                title="Transaction Information"
+                description="Core transaction details."
+              />
 
               <div className="grid gap-x-8 md:grid-cols-2">
                 <DetailRow
@@ -461,7 +678,7 @@ export default function AdminTransactionReviewPage() {
                 />
 
                 <DetailRow
-                  label="Type"
+                  label="Transaction Type"
                   value={transaction.type}
                 />
 
@@ -474,7 +691,12 @@ export default function AdminTransactionReviewPage() {
                 />
 
                 <DetailRow
-                  label="Method"
+                  label="Currency"
+                  value={transaction.currency}
+                />
+
+                <DetailRow
+                  label="Payment Method"
                   value={getMethodLabel(
                     deposit?.method ||
                       withdrawal?.method
@@ -490,9 +712,16 @@ export default function AdminTransactionReviewPage() {
                 />
 
                 <DetailRow
-                  label="Created"
+                  label="Transaction Created"
                   value={formatDate(
                     transaction.createdAt
+                  )}
+                />
+
+                <DetailRow
+                  label="Completed At"
+                  value={formatDate(
+                    transaction.completedAt
                   )}
                 />
 
@@ -503,12 +732,17 @@ export default function AdminTransactionReviewPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-lg font-semibold">
-                User Information
-              </h2>
+            {/* ===================================================== */}
+            {/* USER */}
+            {/* ===================================================== */}
 
-              <div className="mt-4 grid gap-x-8 md:grid-cols-2">
+            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <SectionHeader
+                title="User Information"
+                description="Account belonging to this transaction."
+              />
+
+              <div className="grid gap-x-8 md:grid-cols-2">
                 <DetailRow
                   label="Full Name"
                   value={`${transaction.user.firstName} ${transaction.user.lastName}`}
@@ -539,16 +773,27 @@ export default function AdminTransactionReviewPage() {
               </div>
             </section>
 
-            {isDeposit && deposit && (
-              <>
-                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                  <h2 className="text-lg font-semibold">
-                    Deposit Information
-                  </h2>
+            {/* ===================================================== */}
+            {/* DEPOSIT REQUEST */}
+            {/* ===================================================== */}
 
-                  <div className="mt-4 grid gap-x-8 md:grid-cols-2">
+            {deposit && (
+              <>
+                <section className="rounded-2xl border border-green-500/20 bg-green-500/[0.025] p-6">
+                  <SectionHeader
+                    eyebrow="Deposit Request Review"
+                    title="Deposit Request Information"
+                    description="Everything submitted by the user for this deposit request."
+                  />
+
+                  <div className="grid gap-x-8 md:grid-cols-2">
                     <DetailRow
-                      label="Deposit Status"
+                      label="Deposit Request ID"
+                      value={deposit.id}
+                    />
+
+                    <DetailRow
+                      label="Request Status"
                       value={deposit.status}
                     />
 
@@ -573,20 +818,43 @@ export default function AdminTransactionReviewPage() {
                     />
 
                     <DetailRow
+                      label="Submitted At"
+                      value={formatDate(
+                        deposit.createdAt
+                      )}
+                    />
+
+                    <DetailRow
+                      label="Reviewed At"
+                      value={formatDate(
+                        deposit.reviewedAt
+                      )}
+                    />
+
+                    <DetailRow
                       label="Notes"
                       value={deposit.notes}
                     />
+
+                    {deposit.declineReason && (
+                      <DetailRow
+                        label="Decline Reason"
+                        value={deposit.declineReason}
+                      />
+                    )}
                   </div>
                 </section>
 
+                {/* BANK DEPOSIT */}
                 {deposit.method ===
                   "BANK_TRANSFER" && (
                   <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                    <h2 className="text-lg font-semibold">
-                      Bank Transfer Details
-                    </h2>
+                    <SectionHeader
+                      title="Deposit Bank Transfer Details"
+                      description="Bank information associated with the deposit request."
+                    />
 
-                    <div className="mt-4 grid gap-x-8 md:grid-cols-2">
+                    <div className="grid gap-x-8 md:grid-cols-2">
                       <DetailRow
                         label="Bank Name"
                         value={deposit.selectedBankName}
@@ -594,7 +862,9 @@ export default function AdminTransactionReviewPage() {
 
                       <DetailRow
                         label="Account Name"
-                        value={deposit.selectedAccountName}
+                        value={
+                          deposit.selectedAccountName
+                        }
                       />
 
                       <DetailRow
@@ -613,25 +883,31 @@ export default function AdminTransactionReviewPage() {
 
                       <DetailRow
                         label="SWIFT / BIC"
-                        value={deposit.selectedSwiftBic}
+                        value={
+                          deposit.selectedSwiftBic
+                        }
                       />
 
                       <DetailRow
                         label="Bank Address"
-                        value={deposit.selectedBankAddress}
+                        value={
+                          deposit.selectedBankAddress
+                        }
                       />
                     </div>
                   </section>
                 )}
 
+                {/* CRYPTO DEPOSIT */}
                 {deposit.method ===
                   "CRYPTOCURRENCY" && (
                   <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                    <h2 className="text-lg font-semibold">
-                      Cryptocurrency Details
-                    </h2>
+                    <SectionHeader
+                      title="Cryptocurrency Deposit Details"
+                      description="Cryptocurrency information associated with this deposit."
+                    />
 
-                    <div className="mt-4 grid gap-x-8 md:grid-cols-2">
+                    <div className="grid gap-x-8 md:grid-cols-2">
                       <DetailRow
                         label="Asset"
                         value={deposit.cryptoAsset}
@@ -657,123 +933,211 @@ export default function AdminTransactionReviewPage() {
                   </section>
                 )}
 
+                {/* CASH APP / PAYPAL / ZELLE / VENMO / CARD */}
                 {deposit.method !==
                   "BANK_TRANSFER" &&
                   deposit.method !==
                     "CRYPTOCURRENCY" && (
                     <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                      <h2 className="text-lg font-semibold">
-                        Payment Information
-                      </h2>
+                      <SectionHeader
+                        title="Payment Information"
+                        description={`Information submitted for ${getMethodLabel(
+                          deposit.method
+                        )}.`}
+                      />
 
-                      <div className="mt-4">
-                        <DetailRow
-                          label="Payment Information"
-                          value={
-                            deposit.paymentInformation
-                          }
-                        />
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                          Payment Information
+                        </p>
+
+                        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-white">
+                          {deposit.paymentInformation ||
+                            "No payment information was submitted."}
+                        </p>
                       </div>
                     </section>
                   )}
 
+                {/* FILES */}
                 <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                  <h2 className="text-lg font-semibold">
-                    Submitted Files
-                  </h2>
+                  <SectionHeader
+                    title="Deposit Submitted Files"
+                    description="Payment proof and invoice information submitted with this request."
+                  />
 
-                  <div className="mt-4 space-y-3">
+                  <div className="space-y-4">
                     {deposit.proofFileId && (
-                      <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                        <p className="text-sm font-medium text-white">
-                          Deposit Proof
-                        </p>
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+                          <div>
+                            <p className="font-semibold text-white">
+                              Deposit Proof
+                            </p>
 
-                        <p className="mt-1 break-all text-xs text-gray-500">
-                          File ID: {deposit.proofFileId}
-                        </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Uploaded proof of payment.
+                            </p>
+                          </div>
+
+                          <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-400">
+                            File uploaded
+                          </span>
+                        </div>
+
+                        <div className="mt-4 rounded-lg border border-white/5 bg-black/30 p-3">
+                          <p className="text-xs text-gray-500">
+                            File ID
+                          </p>
+
+                          <p className="mt-1 break-all font-mono text-xs text-gray-300">
+                            {deposit.proofFileId}
+                          </p>
+                        </div>
                       </div>
                     )}
 
                     {deposit.invoiceFileId && (
-                      <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                        <p className="text-sm font-medium text-white">
-                          Payment Invoice
-                        </p>
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+                          <div>
+                            <p className="font-semibold text-white">
+                              Payment Invoice
+                            </p>
 
-                        <p className="mt-1 break-all text-xs text-gray-500">
-                          File ID: {deposit.invoiceFileId}
-                        </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Invoice associated with the payment.
+                            </p>
+                          </div>
+
+                          <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-400">
+                            File uploaded
+                          </span>
+                        </div>
+
+                        <div className="mt-4 rounded-lg border border-white/5 bg-black/30 p-3">
+                          <p className="text-xs text-gray-500">
+                            File ID
+                          </p>
+
+                          <p className="mt-1 break-all font-mono text-xs text-gray-300">
+                            {deposit.invoiceFileId}
+                          </p>
+                        </div>
                       </div>
                     )}
 
                     {!deposit.proofFileId &&
                       !deposit.invoiceFileId && (
-                        <p className="text-sm text-gray-500">
-                          No proof or invoice was uploaded.
-                        </p>
+                        <div className="rounded-xl border border-yellow-500/10 bg-yellow-500/5 p-5">
+                          <p className="text-sm font-medium text-yellow-400">
+                            No payment files uploaded
+                          </p>
+
+                          <p className="mt-1 text-xs text-gray-500">
+                            This request does not contain a proof file or invoice.
+                          </p>
+                        </div>
                       )}
                   </div>
                 </section>
               </>
             )}
 
-            {isWithdrawal && withdrawal && (
-              <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                <h2 className="text-lg font-semibold">
-                  Withdrawal Information
-                </h2>
+            {/* ===================================================== */}
+            {/* WITHDRAWAL REQUEST */}
+            {/* ===================================================== */}
 
-                <div className="mt-4 grid gap-x-8 md:grid-cols-2">
-                  <DetailRow
-                    label="Withdrawal Status"
-                    value={withdrawal.status}
+            {withdrawal && (
+              <>
+                <section className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.025] p-6">
+                  <SectionHeader
+                    eyebrow="Withdrawal Request Review"
+                    title="Withdrawal Request Information"
+                    description="Everything submitted by the user for this withdrawal request."
                   />
 
-                  <DetailRow
-                    label="Withdrawal Method"
-                    value={getMethodLabel(
-                      withdrawal.method
+                  <div className="grid gap-x-8 md:grid-cols-2">
+                    <DetailRow
+                      label="Withdrawal Request ID"
+                      value={withdrawal.id}
+                    />
+
+                    <DetailRow
+                      label="Request Status"
+                      value={withdrawal.status}
+                    />
+
+                    <DetailRow
+                      label="Withdrawal Method"
+                      value={getMethodLabel(
+                        withdrawal.method
+                      )}
+                    />
+
+                    <DetailRow
+                      label="Withdrawal Amount"
+                      value={formatAmount(
+                        withdrawal.amount,
+                        transaction.currency
+                      )}
+                    />
+
+                    <DetailRow
+                      label="Submitted Name"
+                      value={withdrawal.name}
+                    />
+
+                    <DetailRow
+                      label="Email"
+                      value={withdrawal.email}
+                    />
+
+                    <DetailRow
+                      label="Phone"
+                      value={withdrawal.phone}
+                    />
+
+                    <DetailRow
+                      label="Tag / Username"
+                      value={withdrawal.tag}
+                    />
+
+                    <DetailRow
+                      label="Submitted At"
+                      value={formatDate(
+                        withdrawal.createdAt
+                      )}
+                    />
+
+                    <DetailRow
+                      label="Reviewed At"
+                      value={formatDate(
+                        withdrawal.reviewedAt
+                      )}
+                    />
+
+                    {withdrawal.declineReason && (
+                      <DetailRow
+                        label="Decline Reason"
+                        value={
+                          withdrawal.declineReason
+                        }
+                      />
                     )}
-                  />
+                  </div>
+                </section>
 
-                  <DetailRow
-                    label="Amount"
-                    value={formatAmount(
-                      withdrawal.amount,
-                      transaction.currency
-                    )}
-                  />
-
-                  <DetailRow
-                    label="Name"
-                    value={withdrawal.name}
-                  />
-
-                  <DetailRow
-                    label="Email"
-                    value={withdrawal.email}
-                  />
-
-                  <DetailRow
-                    label="Phone"
-                    value={withdrawal.phone}
-                  />
-
-                  <DetailRow
-                    label="Tag / Username"
-                    value={withdrawal.tag}
-                  />
-                </div>
-
+                {/* WITHDRAWAL BANK DETAILS */}
                 {withdrawal.method ===
                   "BANK_TRANSFER" && (
-                  <div className="mt-6 border-t border-white/10 pt-5">
-                    <h3 className="text-sm font-semibold text-gray-300">
-                      Bank Details
-                    </h3>
+                  <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+                    <SectionHeader
+                      title="Withdrawal Bank Details"
+                      description="Bank account information supplied by the user."
+                    />
 
-                    <div className="mt-3 grid gap-x-8 md:grid-cols-2">
+                    <div className="grid gap-x-8 md:grid-cols-2">
                       <DetailRow
                         label="Account Name"
                         value={
@@ -797,7 +1161,9 @@ export default function AdminTransactionReviewPage() {
 
                       <DetailRow
                         label="SWIFT / BIC"
-                        value={withdrawal.swiftBic}
+                        value={
+                          withdrawal.swiftBic
+                        }
                       />
 
                       <DetailRow
@@ -812,42 +1178,118 @@ export default function AdminTransactionReviewPage() {
                         }
                       />
                     </div>
-                  </div>
+                  </section>
                 )}
-              </section>
+
+                {/* NON-BANK WITHDRAWAL DETAILS */}
+                {withdrawal.method !==
+                  "BANK_TRANSFER" && (
+                  <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+                    <SectionHeader
+                      title="Withdrawal Payment Details"
+                      description={`Payout information for ${getMethodLabel(
+                        withdrawal.method
+                      )}.`}
+                    />
+
+                    <div className="grid gap-x-8 md:grid-cols-2">
+                      <DetailRow
+                        label="Name"
+                        value={withdrawal.name}
+                      />
+
+                      <DetailRow
+                        label="Email"
+                        value={withdrawal.email}
+                      />
+
+                      <DetailRow
+                        label="Phone"
+                        value={withdrawal.phone}
+                      />
+
+                      <DetailRow
+                        label="Tag / Username"
+                        value={withdrawal.tag}
+                      />
+                    </div>
+                  </section>
+                )}
+              </>
             )}
           </div>
+
+          {/* ===================================================== */}
+          {/* RIGHT REVIEW PANEL */}
+          {/* ===================================================== */}
 
           <aside className="lg:sticky lg:top-6 lg:self-start">
             <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
               <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                Amount
+                Administrative Review
               </p>
 
-              <p className="mt-2 text-3xl font-bold text-white">
-                {formatAmount(
-                  transaction.amount,
-                  transaction.currency
-                )}
-              </p>
+              <h2 className="mt-2 text-xl font-bold text-white">
+                {isDeposit
+                  ? "Review Deposit Request"
+                  : isWithdrawal
+                  ? "Review Withdrawal Request"
+                  : "Transaction"}
+              </h2>
 
-              <p className="mt-2 text-sm text-gray-500">
-                {getMethodLabel(
-                  deposit?.method ||
-                    withdrawal?.method
+              <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-5">
+                <p className="text-xs uppercase tracking-wider text-gray-500">
+                  Amount
+                </p>
+
+                <p className="mt-2 text-3xl font-bold text-white">
+                  {formatAmount(
+                    transaction.amount,
+                    transaction.currency
+                  )}
+                </p>
+
+                <p className="mt-2 text-sm text-gray-500">
+                  {getMethodLabel(
+                    deposit?.method ||
+                      withdrawal?.method
+                  )}
+                </p>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                  <span className="text-sm text-gray-500">
+                    Transaction
+                  </span>
+
+                  <ReviewStatus
+                    status={transaction.status}
+                  />
+                </div>
+
+                {(deposit || withdrawal) && (
+                  <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                    <span className="text-sm text-gray-500">
+                      Request
+                    </span>
+
+                    <ReviewStatus
+                      status={requestStatus}
+                    />
+                  </div>
                 )}
-              </p>
+              </div>
 
               {isPending ? (
                 <>
                   <div className="mt-6 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
                     <p className="text-sm font-medium text-yellow-400">
-                      Awaiting review
+                      Action required
                     </p>
 
                     <p className="mt-1 text-xs leading-5 text-gray-500">
-                      Verify the submitted information before
-                      approving this transaction.
+                      Review the request information carefully before approving or declining it.
                     </p>
                   </div>
 
@@ -873,18 +1315,19 @@ export default function AdminTransactionReviewPage() {
                       <button
                         type="button"
                         disabled={submitting}
-                        onClick={() =>
-                          setShowDeclineBox(true)
-                        }
-                        className="w-full rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
+                        onClick={() => {
+                          setShowDeclineBox(true);
+                          setError("");
+                        }}
+                        className="w-full rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-400 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Decline
+                        Decline Request
                       </button>
                     )}
                   </div>
 
                   {showDeclineBox && (
-                    <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+                    <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
                       <label
                         htmlFor="decline-reason"
                         className="text-sm font-medium text-gray-300"
@@ -895,16 +1338,21 @@ export default function AdminTransactionReviewPage() {
                       <textarea
                         id="decline-reason"
                         value={declineReason}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setDeclineReason(
                             event.target.value
-                          )
-                        }
-                        rows={4}
+                          );
+                          setError("");
+                        }}
+                        rows={5}
                         maxLength={1000}
                         placeholder="Enter the reason for declining this request..."
                         className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none placeholder:text-gray-600 focus:border-red-500/40"
                       />
+
+                      <div className="mt-2 text-right text-xs text-gray-600">
+                        {declineReason.length}/1000
+                      </div>
 
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <button
@@ -915,7 +1363,7 @@ export default function AdminTransactionReviewPage() {
                             setDeclineReason("");
                             setError("");
                           }}
-                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-semibold text-gray-300 hover:bg-white/10"
+                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-semibold text-gray-300 transition hover:bg-white/10 disabled:opacity-50"
                         >
                           Cancel
                         </button>
@@ -943,19 +1391,53 @@ export default function AdminTransactionReviewPage() {
                 </>
               ) : (
                 <div
-                  className={`mt-6 rounded-xl border p-4 ${getStatusClass(
-                    transaction.status
+                  className={`mt-6 rounded-xl border p-4 ${getTransactionStatusClass(
+                    requestStatus
                   )}`}
                 >
                   <p className="text-sm font-semibold">
-                    This transaction has already been reviewed.
+                    This request has already been reviewed.
                   </p>
 
                   <p className="mt-1 text-xs opacity-80">
-                    Current status: {transaction.status}
+                    Current request status:{" "}
+                    {requestStatus}
                   </p>
+
+                  {deposit?.declineReason && (
+                    <div className="mt-3 border-t border-white/10 pt-3">
+                      <p className="text-xs font-medium uppercase tracking-wider opacity-60">
+                        Decline reason
+                      </p>
+
+                      <p className="mt-1 text-sm">
+                        {deposit.declineReason}
+                      </p>
+                    </div>
+                  )}
+
+                  {withdrawal?.declineReason && (
+                    <div className="mt-3 border-t border-white/10 pt-3">
+                      <p className="text-xs font-medium uppercase tracking-wider opacity-60">
+                        Decline reason
+                      </p>
+
+                      <p className="mt-1 text-sm">
+                        {withdrawal.declineReason}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
+
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <Link
+                  href={`/admin/users/${transaction.user.id}`}
+                  className="block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-semibold text-gray-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  View User Account
+                </Link>
+              </div>
             </section>
           </aside>
         </div>
